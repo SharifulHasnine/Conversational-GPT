@@ -479,7 +479,7 @@ with tab1:
             for j, col in enumerate(col_names[i:i+5]):
                 if j < len(cols):
                     with cols[j]:
-                        st.markdown(f"<div style='background:#f1f3f4;border-radius:6px;padding:6px 8px;margin:2px 0;text-align:center;border:1px solid #e0e0e0;font-size:0.7em;'>{col}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background:#f1f3f4;border-radius:6px;padding:6px 8px;margin:2px 0;text-align:center;border:1px solid #e0e0e0;font-size:1.0em;'>{col}</div>", unsafe_allow_html=True)
 
     # Make the sidebar wider
     st.markdown(
@@ -491,7 +491,7 @@ with tab1:
             width: 500px;
         }
         [data-testid="stSidebar"] * {
-            font-size: 0.9rem !important;
+            font-size: 1.1rem !important;
         }
         </style>
         """,
@@ -589,7 +589,7 @@ with tab1:
                         st.rerun()
 
     # --- INPUT AREA ---
-    st.markdown("<h5 style='margin-bottom:0.4rem;'>💬 GPT that helps you see</h5>", unsafe_allow_html=True)
+    st.markdown("<h5 style='margin-bottom:0.8rem;'>💬 Talk to your data</h5>", unsafe_allow_html=True)
     input_col, send_col = st.columns([6, 1])
 
     with input_col:
