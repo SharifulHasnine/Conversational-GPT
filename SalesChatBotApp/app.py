@@ -10,6 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import hashlib
 
 # Suppress warnings
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -19,6 +20,9 @@ warnings.filterwarnings('ignore', message='.*urllib3.*')
 
 # --- COLUMN NAMES (single line for reference) ---
 COLUMN_NAMES = "Sale_Date, Customer_Name, Customer_Address, Customer_City, Customer_State, Product_Name, Product_Category, Product_Specification, Unit_of_Measure, Quantity_Sold, Unit_Price, Total_Sales_Amount, Discount_Amount, Tax_Amount, Net_Sales_Amount, Salesperson_Name, Salesperson_Contact, Store_Name, Store_Region, Payment_Method, Transaction_Status, Currency_Code, Sale_Month_Year, Sale_Day, Sale_Quarter, Sales Month, Sales Year, Sales Quarter"
+
+# --- CAMPAIGN COLUMN NAMES ---
+CAMPAIGN_COLUMN_NAMES = "Campaign_ID, Campaign_Name, Product, Brand, Start_Date, End_Date, Region, Channel, Ad_Spend_USD, Impressions, Clicks, Conversions, Revenue_USD, Click_Through_Rate, Conversion_Rate, Cost_Per_Click_USD, Cost_Per_Conversion_USD, ROI, Engagement_Score, Campaign_Success, Start_Year, Start_Month, Start_Day, Start_Quarter, End_Year, End_Month, End_Day, End_Quarter"
 
 # --- CONFIG ---
 # Using st.secrets.get() ensures fallback if secrets.toml isn't fully configured
@@ -112,6 +116,98 @@ SALESFACT_SCHEMA = (
     "    ```\n"
 )
 
+# --- CAMPAIGN SCHEMA CONTEXT ---
+CAMPAIGN_SCHEMA = (
+    "The `Campaign` table contains marketing campaign performance data. "
+    "Here's a comprehensive overview of its key columns and usage instructions:\n\n"
+
+    # --- COLUMN DEFINITIONS ---
+    "**CAMPAIGN IDENTIFICATION:**\n"
+    "• `Campaign_ID`: INT (Primary key, unique campaign identifier).\n"
+    "• `Campaign_Name`: VARCHAR(255) (Human-readable campaign name).\n"
+    "• `Product`: VARCHAR(255) (Product being promoted).\n"
+    "• `Brand`: VARCHAR(255) (Brand associated with the campaign).\n\n"
+
+    "**TIME DIMENSIONS:**\n"
+    "• `Start_Date`, `End_Date`: DATETIME (Campaign start and end dates).\n"
+    "• `Start_Year`, `End_Year`: INT (Campaign years).\n"
+    "• `Start_Month`, `End_Month`: VARCHAR(255) (e.g., 'Jan', 'Feb'). Use `ORDER BY FIELD(\\`Start_Month\\`, 'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec')` for chronological order.\n"
+    "• `Start_Quarter`, `End_Quarter`: VARCHAR(255) (e.g., 'Q1', 'Q2').\n"
+    "• `Start_Day`, `End_Day`: INT (Day of month).\n\n"
+
+    "**GEOGRAPHIC & CHANNEL:**\n"
+    "• `Region`: VARCHAR(255) (Geographic region for campaign).\n"
+    "• `Channel`: VARCHAR(255) (Marketing channel: Social Media, Email, PPC, Display, etc.).\n\n"
+
+    "**FINANCIAL METRICS:**\n"
+    "• `Ad_Spend_USD`: DECIMAL(10, 2) (Total advertising spend in USD).\n"
+    "• `Revenue_USD`: DECIMAL(10, 2) (Revenue generated from campaign).\n"
+    "• `ROI`: DECIMAL(10, 4) (Return on Investment: (Revenue - Ad_Spend) / Ad_Spend).\n\n"
+
+    "**PERFORMANCE METRICS:**\n"
+    "• `Impressions`: INT (Number of times ad was shown).\n"
+    "• `Clicks`: INT (Number of clicks on ads).\n"
+    "• `Conversions`: INT (Number of successful conversions).\n"
+    "• `Click_Through_Rate`: DECIMAL(10, 4) (CTR: Clicks / Impressions).\n"
+    "• `Conversion_Rate`: DECIMAL(10, 4) (CR: Conversions / Clicks).\n"
+    "• `Cost_Per_Click_USD`: DECIMAL(10, 2) (CPC: Ad_Spend / Clicks).\n"
+    "• `Cost_Per_Conversion_USD`: DECIMAL(10, 2) (CPA: Ad_Spend / Conversions).\n"
+    "• `Engagement_Score`: DECIMAL(10, 2) (Overall engagement metric).\n"
+    "• `Campaign_Success`: VARCHAR(255) (Success classification: High, Medium, Low).\n\n"
+
+    # --- GENERAL GUIDELINES ---
+    "**GENERAL SQL GUIDELINES:**\n"
+    "• Only use the `Campaign` table. Do NOT use or join any other tables.\n"
+    "• Use exact column names including capitalization.\n"
+    "• For ranking (e.g., `RANK()`, `DENSE_RANK()`), use a subquery or CTE. Do NOT use window functions directly in `SELECT` with `GROUP BY`.\n"
+    "• Format financial numbers as currency ($) and percentages appropriately.\n"
+    "• Always use backticks (`) for column names with spaces.\n\n"
+
+    # --- EXAMPLE QUERIES ---
+    "**COMMON QUERY PATTERNS:**\n"
+    "1.  **Top Performing Campaigns by ROI:**\n"
+    "    ```sql\n"
+    "    SELECT Campaign_Name, ROI, Revenue_USD, Ad_Spend_USD\n"
+    "    FROM Campaign\n"
+    "    ORDER BY ROI DESC\n"
+    "    LIMIT 10;\n"
+    "    ```\n"
+    "2.  **Campaign Performance by Channel:**\n"
+    "    ```sql\n"
+    "    SELECT Channel, AVG(ROI) as Avg_ROI, SUM(Revenue_USD) as Total_Revenue, SUM(Ad_Spend_USD) as Total_Spend\n"
+    "    FROM Campaign\n"
+    "    GROUP BY Channel\n"
+    "    ORDER BY Avg_ROI DESC;\n"
+    "    ```\n"
+    "3.  **Monthly Campaign Performance:**\n"
+    "    ```sql\n"
+    "    SELECT `Start_Month`, `Start_Year`, AVG(ROI) as Avg_ROI, SUM(Revenue_USD) as Total_Revenue\n"
+    "    FROM Campaign\n"
+    "    GROUP BY `Start_Month`, `Start_Year`\n"
+    "    ORDER BY `Start_Year`, FIELD(`Start_Month`, 'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec');\n"
+    "    ```\n"
+    "4.  **Regional Performance Analysis:**\n"
+    "    ```sql\n"
+    "    SELECT Region, COUNT(*) as Campaign_Count, AVG(ROI) as Avg_ROI, SUM(Revenue_USD) as Total_Revenue\n"
+    "    FROM Campaign\n"
+    "    GROUP BY Region\n"
+    "    ORDER BY Avg_ROI DESC;\n"
+    "    ```\n"
+    "5.  **Conversion Rate Analysis:**\n"
+    "    ```sql\n"
+    "    SELECT Campaign_Name, Conversion_Rate, Clicks, Conversions, Cost_Per_Conversion_USD\n"
+    "    FROM Campaign\n"
+    "    WHERE Clicks > 0\n"
+    "    ORDER BY Conversion_Rate DESC;\n"
+    "    ```\n"
+    "6.  **Campaign Success Distribution:**\n"
+    "    ```sql\n"
+    "    SELECT Campaign_Success, COUNT(*) as Campaign_Count, AVG(ROI) as Avg_ROI\n"
+    "    FROM Campaign\n"
+    "    GROUP BY Campaign_Success;\n"
+    "    ```\n"
+)
+
 def parse_ollama_response(response_text):
     """
     Parses the combined Ollama response to extract SQL and explanation.
@@ -191,6 +287,33 @@ def get_db_connection_cached():
         return None
 
 def fetch_sales_facts(query):
+    conn = get_db_connection_cached()
+    if conn is None:
+        return None # Return None if connection failed
+
+    # Ping the connection to ensure it's still alive, reconnect if necessary
+    try:
+        conn.ping(reconnect=True, attempts=3)
+    except mysql.connector.Error as err:
+        st.error(f"Database connection lost, attempting to re-establish... Error: {err}")
+        # Clear the cache to force a new connection on next attempt
+        st.cache_resource.clear()
+        conn = get_db_connection_cached() # Try to get a new connection
+        if conn is None:
+            return None # If reconnection also failed, return None
+
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(query)
+        results = cursor.fetchall()
+        cursor.close()
+        return results
+    except mysql.connector.Error as err:
+        st.error(f"SQL query error: {err}\n\nQuery:\n```sql\n{query}\n```")
+        return None
+
+def fetch_campaign_data(query):
+    """Fetch data from the Campaign table"""
     conn = get_db_connection_cached()
     if conn is None:
         return None # Return None if connection failed
@@ -455,9 +578,10 @@ st.set_page_config(page_title="Conversational GPT", page_icon="💡", layout="wi
 #     st.success("✅ **Database Connected:** MySQL is running and connected successfully.")
 
 # Create tabs for different functionalities
-tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat Assistant","📈 Charts & Analytics", "📊 Time Series Analysis", "🔮 ML Forecasting"])
+tab1, tab5,tab2, tab3, tab4,  = st.tabs(["💬 Chat Assistant","📢 Campaign Analysis","📈 Charts & Analytics", "📊 Time Series Analysis", "🔮 ML Forecasting"])
 
 with tab1:
+    st.markdown('<div class="tab1-content">', unsafe_allow_html=True)
     col1, col2 = st.columns([8, 2])
     with col1:
         st.markdown("<h4 style='margin-bottom:0.65rem;'>Conversational GPT: Business insight, at the speed of thought.🤖</h4>", unsafe_allow_html=True)
@@ -472,7 +596,7 @@ with tab1:
     # Display column names at the top, wrapped for readability
     st.markdown("**Available Information:**")
 
-    with st.expander("Available Columns:"): # Changed expander title
+    with st.expander("Sales:"): # Changed expander title
         col_names = [col.strip() for col in COLUMN_NAMES.split(",")]
         for i in range(0, len(col_names), 5):
             cols = st.columns(5)
@@ -480,18 +604,43 @@ with tab1:
                 if j < len(cols):
                     with cols[j]:
                         st.markdown(f"<div style='background:#f1f3f4;border-radius:6px;padding:6px 8px;margin:2px 0;text-align:center;border:1px solid #e0e0e0;font-size:1.0em;'>{col}</div>", unsafe_allow_html=True)
+    with st.expander("Campaign:"): # Changed expander title
+        col_names = [col.strip() for col in CAMPAIGN_COLUMN_NAMES.split(",")]
+        for i in range(0, len(col_names), 5):
+            cols = st.columns(5)
+            for j, col in enumerate(col_names[i:i+5]):
+                if j < len(cols):
+                    with cols[j]:
+                        st.markdown(f"<div style='background:#f1f3f4;border-radius:6px;padding:6px 8px;margin:2px 0;text-align:center;border:1px solid #e0e0e0;font-size:1.0em;'>{col}</div>", unsafe_allow_html=True)
 
-    # Make the sidebar wider
+    # Make the sidebar wider and grouped_questions font bigger
     st.markdown(
         """
         <style>
-        [data-testid="stSidebar] {
+        [data-testid="stSidebar"] {
             min-width: 550px;
             max-width: 600px;
             width: 500px;
         }
         [data-testid="stSidebar"] * {
-            font-size: 1.1rem !important;
+            font-size: 1.3rem !important;
+        }
+        /* Make grouped_questions (expanders and their buttons) 70% bigger */
+        [data-testid="stSidebar"] [data-testid="stExpander"] > div:first-child {
+            font-size: 2.21rem !important; /* 1.3rem * 1.7 */
+        }
+        [data-testid="stSidebar"] [data-testid="stExpander"] button {
+            font-size: 1.7em !important;
+        }
+        /* Make tab headers 50% bigger */
+        [data-testid="stTabs"] [data-testid="stTabLabel"] {
+            font-size: 1.9rem !important;
+        }
+        button[data-baseweb="tab"] > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 1.3rem !important;
+        }
+        .tab1-content {
+            font-size: 1.3em !important;
         }
         </style>
         """,
@@ -504,6 +653,9 @@ with tab1:
 
     if "clear_input" not in st.session_state:
         st.session_state.clear_input = False
+
+    if "chat_counter" not in st.session_state:
+        st.session_state.chat_counter = 0
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -573,6 +725,28 @@ with tab1:
             "What % of transactions were completed successfully?",
             "Summarize sales by transaction status (completed, failed, etc.)"
         ],
+        "📢 Campaign Performance": [
+            "What are the top 10 campaigns by ROI?",
+            "Which marketing channel has the highest conversion rate?",
+            "Show campaign performance by region.",
+            "What's the average cost per click by channel?",
+            "Which campaigns had the highest engagement scores?",
+            "Show monthly campaign performance trends.",
+            "Compare ROI across different products.",
+            "Which campaigns were most successful by quarter?",
+            "What's the average cost per conversion by region?"
+        ],
+        "📊 Campaign Analytics": [
+            "Show click-through rates by campaign type.",
+            "Which campaigns had the highest impressions?",
+            "Compare revenue vs ad spend by channel.",
+            "Show campaign success distribution.",
+            "Which products perform best in campaigns?",
+            "Show seasonal campaign performance patterns.",
+            "Compare conversion rates across regions.",
+            "Which campaigns had the lowest cost per acquisition?",
+            "Show campaign performance by brand."
+        ],
         "🧪 Operational Checks": [
             "Find transactions with zero or negative quantity.",
             "List orders where net sales amount was zero.",
@@ -614,9 +788,23 @@ with tab1:
         user_question = user_question.strip()
         
         with st.spinner("🤔 Thinking..."):
+            # Determine if this is a campaign-related query
+            campaign_keywords = ['campaign', 'roi', 'impressions', 'clicks', 'conversions', 'ad spend', 'revenue_usd', 'click through rate', 'conversion rate', 'cost per click', 'cost per conversion', 'engagement score', 'campaign success', 'channel', 'brand']
+            is_campaign_query = any(keyword.lower() in user_question.lower() for keyword in campaign_keywords)
+            
+            # Choose appropriate schema and table
+            if is_campaign_query:
+                schema_context = CAMPAIGN_SCHEMA
+                table_name = "Campaign"
+                fetch_function = fetch_campaign_data
+            else:
+                schema_context = SALESFACT_SCHEMA
+                table_name = "SalesFact"
+                fetch_function = fetch_sales_facts
+            
             # Combined SQL Generation and Explanation Prompt
             combined_prompt = (
-                f"You are an expert SQL assistant and business analyst. {SALESFACT_SCHEMA}\n\n"
+                f"You are an expert SQL assistant and business analyst. {schema_context}\n\n"
                 f"Given the user's question: '{user_question}', generate a MySQL query and provide a business explanation.\n\n"
                 f"**IMPORTANT: Your response MUST follow this EXACT format:**\n\n"
                 f"SQL:\n```sql\n[YOUR SQL QUERY HERE]\n```\n"
@@ -624,7 +812,7 @@ with tab1:
                 f"**Requirements:**\n"
                 f"- Start with 'SQL:' followed by your query in a code block\n"
                 f"- End with 'Explanation:' followed by your business analysis\n"
-                f"- Format numbers as currency (৳) where appropriate\n"
+                f"- Format numbers as currency ($ for campaigns, ৳ for sales) where appropriate\n"
                 f"- Add line breaks for clarity\n"
                 f"- Do NOT include any other text before 'SQL:' or after 'Explanation:'"
             )
@@ -636,7 +824,7 @@ with tab1:
 
             if sql_query: # Only proceed if SQL was successfully generated
                 try:
-                    data = fetch_sales_facts(sql_query)
+                    data = fetch_function(sql_query)
                     if data is not None: # Check if data fetching was successful
                         if not answer_explanation: # Fallback if explanation wasn't parsed
                             answer = f"Here is the data for your query.\n\nQuery:\n```sql\n{sql_query}\n```"
@@ -644,7 +832,7 @@ with tab1:
                             answer = answer_explanation
                     else:
                         # Database connection failed but we have SQL
-                        answer = f"✅ SQL Query Generated Successfully!\n\n```sql\n{sql_query}\n```\n\n❌ **Database Connection Issue:**\nThe SQL query was generated correctly, but I couldn't connect to the database to execute it. Please ensure:\n1. MySQL is installed and running\n2. Database credentials are correct\n3. The 'SalesChatBot' database exists\n\n**Generated SQL Explanation:**\n{answer_explanation if answer_explanation else 'Query generated but explanation not available.'}"
+                        answer = f"✅ SQL Query Generated Successfully!\n\n```sql\n{sql_query}\n```\n\n❌ **Database Connection Issue:**\nThe SQL query was generated correctly, but I couldn't connect to the database to execute it. Please ensure:\n1. MySQL is installed and running\n2. Database credentials are correct\n3. The '{DB_NAME}' database exists with the '{table_name}' table\n\n**Generated SQL Explanation:**\n{answer_explanation if answer_explanation else 'Query generated but explanation not available.'}"
 
                 except Exception as e: # Catch any other unexpected errors during data fetching
                     answer = f"An unexpected error occurred while processing results: {e}\n\nSQL tried:```sql\n{sql_query}\n```"
@@ -652,11 +840,13 @@ with tab1:
                 answer = f"I could not generate a valid SQL query from your question. Please try rephrasing. Debug Info: Ollama Response:\n{ollama_response}"
 
         st.session_state.chat_history.append({
+            "id": st.session_state.chat_counter,
             "question": user_question,
             "sql": sql_query,
             "data": data,
             "answer": answer
         })
+        st.session_state.chat_counter += 1
         st.rerun() # Rerun to update chat history and clear input box
 
     # --- CHAT HISTORY DISPLAY ---
@@ -686,7 +876,7 @@ with tab1:
                             "Chart Type",
                             available_charts if available_charts else all_charts,
                             help="Select the type of chart to display",
-                            key=f"chat_chart_type_{chat['question'][:20]}"
+                            key=f"chat_chart_type_{chat['id']}"
                         )
                     
                     with col2:
@@ -698,14 +888,14 @@ with tab1:
                             "X-Axis Column",
                             ["Auto"] + columns,
                             help="Select column for X-axis (or Auto for automatic selection)",
-                            key=f"chat_x_column_{chat['question'][:20]}"
+                            key=f"chat_x_column_{chat['id']}"
                         )
                         
                         y_column = st.selectbox(
                             "Y-Axis Column", 
                             ["Auto"] + columns,
                             help="Select column for Y-axis (or Auto for automatic selection)",
-                            key=f"chat_y_column_{chat['question'][:20]}"
+                            key=f"chat_y_column_{chat['id']}"
                         )
                     
                     with col3:
@@ -713,7 +903,7 @@ with tab1:
                             "Color Column (Optional)",
                             ["None"] + columns,
                             help="Select column for color coding",
-                            key=f"chat_color_column_{chat['question'][:20]}"
+                            key=f"chat_color_column_{chat['id']}"
                         )
                     
                     # Chart title
@@ -721,11 +911,11 @@ with tab1:
                         "Chart Title",
                         value=f"Visualization: {chat['question'][:50]}...",
                         help="Enter a title for the chart",
-                        key=f"chat_chart_title_{chat['question'][:20]}"
+                        key=f"chat_chart_title_{chat['id']}"
                     )
                     
                     # Create and display chart
-                    if st.button("🔄 Generate Chart", type="secondary", key=f"chat_generate_chart_{chat['question']}"):
+                    if st.button("🔄 Generate Chart", type="secondary", key=f"chat_generate_chart_{chat['id']}"):
                         with st.spinner("Creating chart..."):
                             # Convert "Auto" and "None" selections
                             x_col = None if x_column == "Auto" else x_column
@@ -750,7 +940,8 @@ with tab1:
                                     label="📥 Download Chart (HTML)",
                                     data=html_string,
                                     file_name=f"chart_{chart_type.lower().replace(' ', '_')}.html",
-                                    mime="text/html"
+                                    mime="text/html",
+                                    key=f"chat_download_html_{chat['id']}"
                                 )
                             else:
                                 st.warning("⚠️ Could not create chart with the selected parameters. Try different column selections.")
@@ -764,7 +955,461 @@ with tab1:
                     st.info("No data available for charting.")
         
         st.caption(f"🧠 SQL used: `{chat['sql']}`")
+    st.markdown('</div>', unsafe_allow_html=True)
 
+with tab5:
+    st.success("📢 Campaign Analysis: Analyze marketing campaign performance data with comprehensive metrics and visualizations.")
+   
+    
+    # Get campaign data for analysis
+    with st.spinner("Loading campaign data for analysis..."):
+        campaign_query = "SELECT * FROM Campaign ORDER BY `Start_Year`, `Start_Month`"
+        campaign_data = fetch_campaign_data(campaign_query)
+    
+    if campaign_data is None:
+        st.error("❌ Unable to load campaign data for analysis. Please ensure the database is connected and the Campaign table exists.")
+    else:
+        
+        
+       
+        if campaign_data:
+            df = pd.DataFrame(campaign_data)
+            
+            # Add filters
+           
+            filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+            
+            with filter_col1:
+                # Campaign Name filter
+                campaign_names = ["All"] + sorted(df['Campaign_Name'].unique().tolist()) if 'Campaign_Name' in df.columns else ["All"]
+                selected_campaign = st.selectbox(
+                    "Campaign Name",
+                    campaign_names,
+                    help="Filter by specific campaign name"
+                )
+            
+            with filter_col2:
+                # Product filter
+                products = ["All"] + sorted(df['Product'].unique().tolist()) if 'Product' in df.columns else ["All"]
+                selected_product = st.selectbox(
+                    "Product",
+                    products,
+                    help="Filter by specific product"
+                )
+            
+            with filter_col3:
+                # Brand filter
+                brands = ["All"] + sorted(df['Brand'].unique().tolist()) if 'Brand' in df.columns else ["All"]
+                selected_brand = st.selectbox(
+                    "Brand",
+                    brands,
+                    help="Filter by specific brand"
+                )
+            
+            with filter_col4:
+                # Channel filter
+                channels = ["All"] + sorted(df['Channel'].unique().tolist()) if 'Channel' in df.columns else ["All"]
+                selected_channel = st.selectbox(
+                    "Channel",
+                    channels,
+                    help="Filter by specific channel"
+                )
+            
+            # Apply filters
+            filtered_df = df.copy()
+            
+            if selected_campaign != "All":
+                filtered_df = filtered_df[filtered_df['Campaign_Name'] == selected_campaign]
+            
+            if selected_product != "All":
+                filtered_df = filtered_df[filtered_df['Product'] == selected_product]
+            
+            if selected_brand != "All":
+                filtered_df = filtered_df[filtered_df['Brand'] == selected_brand]
+            
+            if selected_channel != "All":
+                filtered_df = filtered_df[filtered_df['Channel'] == selected_channel]
+            
+            # Show filter summary
+            active_filters = []
+            if selected_campaign != "All":
+                active_filters.append(f"Campaign: {selected_campaign}")
+            if selected_product != "All":
+                active_filters.append(f"Product: {selected_product}")
+            if selected_brand != "All":
+                active_filters.append(f"Brand: {selected_brand}")
+            if selected_channel != "All":
+                active_filters.append(f"Channel: {selected_channel}")
+            
+            if active_filters:
+                st.info(f"🔍 **Active Filters:** {', '.join(active_filters)} | **Filtered Records:** {len(filtered_df)} out of {len(df)}")
+            
+            
+            # Calculate key metrics based on filtered data
+            total_campaigns = len(filtered_df)
+            total_revenue = filtered_df['Revenue_USD'].sum() if 'Revenue_USD' in filtered_df.columns else 0
+            total_spend = filtered_df['Ad_Spend_USD'].sum() if 'Ad_Spend_USD' in filtered_df.columns else 0
+            avg_roi = filtered_df['ROI'].mean() if 'ROI' in filtered_df.columns else 0
+            total_impressions = filtered_df['Impressions'].sum() if 'Impressions' in filtered_df.columns else 0
+            total_clicks = filtered_df['Clicks'].sum() if 'Clicks' in filtered_df.columns else 0
+            total_conversions = filtered_df['Conversions'].sum() if 'Conversions' in filtered_df.columns else 0
+            
+            # Calculate overall CTR
+            overall_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            
+            # Display metrics
+            st.subheader("📊 Campaign Performance Metrics")
+            
+            # Create metric cards using custom styling
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: white;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.9;">Total Campaigns</p>
+                    </div>
+                    """.format(f"{total_campaigns:,}"), unsafe_allow_html=True)
+            
+            with col2:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: white;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.9;">Total Revenue</p>
+                    </div>
+                    """.format(f"${total_revenue:,.0f}"), unsafe_allow_html=True)
+            
+            with col3:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: white;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.9;">Total Ad Spend</p>
+                    </div>
+                    """.format(f"${total_spend:,.0f}"), unsafe_allow_html=True)
+            
+            with col4:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: white;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.9;">Average ROI</p>
+                    </div>
+                    """.format(f"{avg_roi:.1f}%"), unsafe_allow_html=True)
+            
+            # Second row of metrics
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: #333;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.8;">Total Impressions</p>
+                    </div>
+                    """.format(f"{total_impressions:,}"), unsafe_allow_html=True)
+            
+            with col6:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: #333;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.8;">Total Clicks</p>
+                    </div>
+                    """.format(f"{total_clicks:,}"), unsafe_allow_html=True)
+            
+            with col7:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: #333;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.8;">Total Conversions</p>
+                    </div>
+                    """.format(f"{total_conversions:,}"), unsafe_allow_html=True)
+            
+            with col8:
+                with st.container():
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%);
+                        padding: 20px;
+                        border-radius: 15px;
+                        color: #333;
+                        text-align: center;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                        margin: 10px 0;
+                    ">
+                        <h3 style="margin: 0; font-size: 2.5em; font-weight: bold;">{}</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 1.1em; opacity: 0.8;">Overall CTR</p>
+                    </div>
+                    """.format(f"{overall_ctr:.2f}%"), unsafe_allow_html=True)
+            
+            # Show filtered data table
+            with st.expander("📋 Filtered Campaign Data"):
+                st.dataframe(filtered_df)
+                
+                # Download filtered data
+                csv = filtered_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Filtered Data (CSV)",
+                    data=csv,
+                    file_name=f"campaign_data_filtered_{len(filtered_df)}_records.csv",
+                    mime="text/csv"
+                )
+
+        # Analysis configuration
+        st.subheader("🔍 Analysis Configuration")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            analysis_type = st.selectbox(
+                "Analysis Type",
+                ["Performance Overview", "Channel Analysis", "Regional Analysis", "Product Analysis", "Time Series Analysis"],
+                help="Choose the type of analysis",
+                key="campaign_analysis_type_select"
+            )
+        
+        with col2:
+            metric_type = st.selectbox(
+                "Primary Metric",
+                ["ROI", "Revenue_USD", "Ad_Spend_USD", "Impressions", "Clicks", "Conversions", "Click_Through_Rate", "Conversion_Rate"],
+                help="Choose the primary metric to analyze",
+                key="campaign_metric_select"
+            )
+        
+        with col3:
+            chart_type = st.selectbox(
+                "Chart Type",
+                ["Bar Chart", "Line Chart", "Pie Chart", "Scatter Plot", "Box Plot", "Heatmap"],
+                help="Choose the visualization type",
+                key="campaign_chart_type_select"
+            )
+        
+        # Perform analysis based on type
+        if st.button("🚀 Generate Campaign Analysis", type="primary", key="generate_campaign_analysis"):
+            with st.spinner("Analyzing campaign data..."):
+                if analysis_type == "Performance Overview":
+                    # Top performing campaigns
+                    st.subheader("🏆 Top Performing Campaigns")
+                    
+                    # Top by ROI
+                    if 'ROI' in df.columns:
+                        top_roi = df.nlargest(10, 'ROI')[['Campaign_Name', 'ROI', 'Revenue_USD', 'Ad_Spend_USD']]
+                        st.write("**Top 10 Campaigns by ROI:**")
+                        st.dataframe(top_roi)
+                        
+                        # Create ROI chart
+                        fig = px.bar(top_roi, x='Campaign_Name', y='ROI', 
+                                   title="Top 10 Campaigns by ROI",
+                                   labels={'ROI': 'ROI (%)', 'Campaign_Name': 'Campaign'})
+                        fig.update_layout(xaxis_tickangle=-45)
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Success distribution
+                    if 'Campaign_Success' in df.columns:
+                        st.subheader("📈 Campaign Success Distribution")
+                        success_dist = df['Campaign_Success'].value_counts()
+                        fig = px.pie(values=success_dist.values, names=success_dist.index, 
+                                   title="Campaign Success Distribution")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                elif analysis_type == "Channel Analysis":
+                    st.subheader("📺 Channel Performance Analysis")
+                    
+                    if 'Channel' in df.columns:
+                        channel_metrics = df.groupby('Channel').agg({
+                            'ROI': 'mean',
+                            'Revenue_USD': 'sum',
+                            'Ad_Spend_USD': 'sum',
+                            'Impressions': 'sum',
+                            'Clicks': 'sum',
+                            'Conversions': 'sum'
+                        }).round(4)
+                        
+                        # Calculate additional metrics
+                        channel_metrics['CTR'] = (channel_metrics['Clicks'] / channel_metrics['Impressions'] * 100).round(2)
+                        channel_metrics['Conversion_Rate'] = (channel_metrics['Conversions'] / channel_metrics['Clicks'] * 100).round(2)
+                        channel_metrics['Cost_Per_Click'] = (channel_metrics['Ad_Spend_USD'] / channel_metrics['Clicks']).round(2)
+                        
+                        st.dataframe(channel_metrics)
+                        
+                        # Create channel comparison chart
+                        fig = px.bar(channel_metrics, x=channel_metrics.index, y=metric_type,
+                                   title=f"Channel Performance by {metric_type}")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                elif analysis_type == "Regional Analysis":
+                    st.subheader("🌍 Regional Performance Analysis")
+                    
+                    if 'Region' in df.columns:
+                        regional_metrics = df.groupby('Region').agg({
+                            'ROI': 'mean',
+                            'Revenue_USD': 'sum',
+                            'Ad_Spend_USD': 'sum',
+                            'Impressions': 'sum',
+                            'Clicks': 'sum',
+                            'Conversions': 'sum'
+                        }).round(4)
+                        
+                        st.dataframe(regional_metrics)
+                        
+                        # Create regional comparison chart
+                        fig = px.bar(regional_metrics, x=regional_metrics.index, y=metric_type,
+                                   title=f"Regional Performance by {metric_type}")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                elif analysis_type == "Product Analysis":
+                    st.subheader("📦 Product Performance Analysis")
+                    
+                    if 'Product' in df.columns:
+                        product_metrics = df.groupby('Product').agg({
+                            'ROI': 'mean',
+                            'Revenue_USD': 'sum',
+                            'Ad_Spend_USD': 'sum',
+                            'Impressions': 'sum',
+                            'Clicks': 'sum',
+                            'Conversions': 'sum'
+                        }).round(4)
+                        
+                        st.dataframe(product_metrics)
+                        
+                        # Create product comparison chart
+                        fig = px.bar(product_metrics, x=product_metrics.index, y=metric_type,
+                                   title=f"Product Performance by {metric_type}")
+                        fig.update_layout(xaxis_tickangle=-45)
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                elif analysis_type == "Time Series Analysis":
+                    st.subheader("📅 Time Series Analysis")
+                    
+                    if 'Start_Date' in df.columns and 'Revenue_USD' in df.columns:
+                        # Prepare time series data
+                        df['Start_Date'] = pd.to_datetime(df['Start_Date'])
+                        df['Month'] = df['Start_Date'].dt.to_period('M')
+                        
+                        monthly_metrics = df.groupby('Month').agg({
+                            'Revenue_USD': 'sum',
+                            'Ad_Spend_USD': 'sum',
+                            'Impressions': 'sum',
+                            'Clicks': 'sum',
+                            'Conversions': 'sum'
+                        }).reset_index()
+                        
+                        monthly_metrics['Month'] = monthly_metrics['Month'].astype(str)
+                        monthly_metrics['ROI'] = ((monthly_metrics['Revenue_USD'] - monthly_metrics['Ad_Spend_USD']) / monthly_metrics['Ad_Spend_USD'] * 100).round(2)
+                        
+                        # Create time series chart
+                        fig = px.line(monthly_metrics, x='Month', y=metric_type,
+                                    title=f"Monthly {metric_type} Trend")
+                        fig.update_layout(xaxis_tickangle=-45)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.dataframe(monthly_metrics)
+        
+        # Quick Analysis Templates
+        st.subheader("🚀 Quick Analysis Templates")
+        
+        template_col1, template_col2, template_col3, template_col4 = st.columns(4)
+        
+        with template_col1:
+            if st.button("🏆 Top ROI Campaigns", use_container_width=True, key="template_top_roi"):
+                if 'ROI' in df.columns:
+                    top_roi = df.nlargest(10, 'ROI')[['Campaign_Name', 'ROI', 'Revenue_USD', 'Ad_Spend_USD']]
+                    fig = px.bar(top_roi, x='Campaign_Name', y='ROI', title="Top 10 Campaigns by ROI")
+                    fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with template_col2:
+            if st.button("📺 Channel Performance", use_container_width=True, key="template_channel_performance"):
+                if 'Channel' in df.columns and 'ROI' in df.columns:
+                    channel_roi = df.groupby('Channel')['ROI'].mean().sort_values(ascending=False)
+                    fig = px.bar(x=channel_roi.index, y=channel_roi.values, title="Average ROI by Channel")
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with template_col3:
+            if st.button("🌍 Regional Analysis", use_container_width=True, key="template_regional_analysis"):
+                if 'Region' in df.columns and 'Revenue_USD' in df.columns:
+                    regional_revenue = df.groupby('Region')['Revenue_USD'].sum().sort_values(ascending=False)
+                    fig = px.pie(values=regional_revenue.values, names=regional_revenue.index, title="Revenue by Region")
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with template_col4:
+            if st.button("📈 Conversion Rates", use_container_width=True, key="template_conversion_rates"):
+                if 'Conversion_Rate' in df.columns:
+                    top_conversion = df.nlargest(10, 'Conversion_Rate')[['Campaign_Name', 'Conversion_Rate', 'Clicks', 'Conversions']]
+                    fig = px.bar(top_conversion, x='Campaign_Name', y='Conversion_Rate', title="Top 10 Campaigns by Conversion Rate")
+                    fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        # Show sample data for reference
+        with st.expander("📊 Sample Campaign Data"):
+            if campaign_data:
+                sample_df = pd.DataFrame(campaign_data[:10])
+                st.dataframe(sample_df)
+                
+                # Show data info
+                st.write("**Data Info:**")
+                st.write(f"• Total records: {len(df)}")
+                st.write(f"• Columns: {', '.join(df.columns.tolist())}")
+                st.write(f"• Date range: {df['Start_Date'].min()} to {df['Start_Date'].max()}" if 'Start_Date' in df.columns else "No date information available")
 # --- FORECASTING TAB ---
 with tab4:
     st.markdown("<h4 style='margin-bottom:0.65rem;'>🔮 ML Sales Forecasting</h4>", unsafe_allow_html=True)
@@ -1447,3 +2092,5 @@ with tab2:
                         fig = create_chart(template_data, "Bar Chart", "Customer_City", "CitySales", title="Top 10 Cities by Sales")
                         if fig:
                             st.plotly_chart(fig, use_container_width=True)
+
+# --- CAMPAIGN ANALYSIS TAB ---
